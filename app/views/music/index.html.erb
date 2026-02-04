@@ -68,7 +68,13 @@
 
     <div class="panel playlist-panel">
       <div class="panel-head">
-        <h2>Playlist</h2>
+        <div class="panel-title">
+          <h2>Playlist</h2>
+          <div class="playlist-name">
+            <label for="playlist-name">Name</label>
+            <input id="playlist-name" class="playlist-input" type="text" value="Watch Later" data-yt-music-target="playlistName" data-action="change->yt-music#loadPlaylist">
+          </div>
+        </div>
         <div class="playlist-actions">
           <button class="btn primary" type="button" data-action="yt-music#playPlaylist">Play</button>
           <button class="btn ghost" type="button" data-action="yt-music#clearPlaylist">Clear</button>

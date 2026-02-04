@@ -16,4 +16,7 @@ Rails.application.routes.draw do
   get "music/search" => "music#search"
   get "music/details" => "music#details"
   get "music/external" => "music#external"
+  get "music/playlist" => "music#playlist"
+  post "music/playlist_items" => "music#add_to_playlist"
+  delete "music/playlist_items" => "music#remove_from_playlist"
 end

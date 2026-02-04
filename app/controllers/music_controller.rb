@@ -75,12 +75,16 @@ class MusicController < ApplicationController
     artist = params[:artist].to_s.strip
     query = params[:q].to_s.strip
     query = [title, artist].join(" ").strip if query.blank?
+    title_parse = parse_title_parts(title)
+    artist_sanitized = sanitize_artist(artist)
     if debug
       debug_info[:request] = {
         title: title,
         artist: artist,
         query: query
       }
+      debug_info[:title_parse] = title_parse
+      debug_info[:artist_sanitized] = artist_sanitized
     end
 
     if query.blank?
@@ -89,7 +93,7 @@ class MusicController < ApplicationController
         lyrics: nil,
         links: build_links(
           title: title,
-          artist: artist,
+          artist: artist_sanitized,
           video_id: params[:video_id].to_s.strip,
           channel_id: params[:channel_id].to_s.strip
         )
@@ -98,7 +102,8 @@ class MusicController < ApplicationController
       return render json: response
     end
 
-    itunes_data = external_client.itunes_search(term: query, limit: 3)
+    itunes_term = sanitize_title(title).presence || query
+    itunes_data = external_client.itunes_search(term: itunes_term, limit: 5)
     return render_api_error(itunes_data) if api_error?(itunes_data)
 
     items = Array(itunes_data["results"]).map do |item|
@@ -118,27 +123,57 @@ class MusicController < ApplicationController
       }
     end
 
-    top_item = items.first
+    top_item = select_itunes_item(items, title: title, artist: artist_sanitized)
     lyrics_text = nil
-    lyrics_debug = {}
-    if top_item&.dig(:artist).present? && top_item&.dig(:title).present?
-      lyrics_data = external_client.lyrics(artist: top_item[:artist], title: top_item[:title])
-      if lyrics_data.is_a?(Hash) && lyrics_data["lyrics"].present?
-        lyrics_text = lyrics_data["lyrics"]
-        lyrics_debug[:status] = "ok"
-      else
-        lyrics_debug[:status] = "error"
-        lyrics_debug[:error] = lyrics_data["error"] || "no_lyrics"
-      end
-    else
+    lyrics_debug = { attempts: [] }
+    candidates = build_lyrics_candidates(
+      title: title,
+      artist: artist_sanitized,
+      parsed_left: title_parse[:left],
+      parsed_right: title_parse[:right],
+      itunes_item: top_item
+    )
+
+    if candidates.empty?
       lyrics_debug[:status] = "skipped"
-      lyrics_debug[:reason] = "no_itunes_match"
+      lyrics_debug[:reason] = "no_candidates"
+    else
+      candidates.each do |candidate|
+        attempt = {
+          source: candidate[:source],
+          artist: candidate[:artist],
+          title: candidate[:title],
+          url: lyrics_request_url(candidate[:artist], candidate[:title])
+        }
+
+        lyrics_data = external_client.lyrics(artist: candidate[:artist], title: candidate[:title])
+        if lyrics_data.is_a?(Hash) && lyrics_data["lyrics"].present?
+          lyrics_text = lyrics_data["lyrics"]
+          attempt[:status] = "ok"
+          lyrics_debug[:status] = "ok"
+          lyrics_debug[:selected] = {
+            source: candidate[:source],
+            artist: candidate[:artist],
+            title: candidate[:title]
+          }
+          lyrics_debug[:attempts] << attempt
+          break
+        else
+          attempt[:status] = "error"
+          attempt[:error] = lyrics_data["error"] || "no_lyrics"
+          lyrics_debug[:attempts] << attempt
+        end
+      end
+
+      lyrics_debug[:status] ||= "error"
     end
 
     if debug
       debug_info[:itunes] = {
         count: items.size,
-        top: top_item&.slice(:title, :artist, :album, :release_date, :genre)
+        term: itunes_term,
+        top: items.first&.slice(:title, :artist, :album, :release_date, :genre),
+        selected: top_item&.slice(:title, :artist, :album, :release_date, :genre)
       }
       debug_info[:lyrics] = lyrics_debug
     end
@@ -148,7 +183,7 @@ class MusicController < ApplicationController
       lyrics: lyrics_text.present? ? { text: lyrics_text, source: "lyrics.ovh" } : nil,
       links: build_links(
         title: title,
-        artist: artist,
+        artist: artist_sanitized,
         query: query,
         video_id: params[:video_id].to_s.strip,
         channel_id: params[:channel_id].to_s.strip,
@@ -157,6 +192,41 @@ class MusicController < ApplicationController
     }
     response[:debug] = debug_info if debug
     render json: response
+  end
+
+  def playlist
+    playlist = find_or_create_playlist
+    render json: playlist_payload(playlist)
+  end
+
+  def add_to_playlist
+    playlist = find_or_create_playlist
+    video_id = params[:video_id].to_s.strip
+    return render json: { error: "missing_video_id" }, status: :bad_request if video_id.blank?
+
+    item = playlist.playlist_items.find_or_initialize_by(video_id: video_id)
+    item.title = params[:title].to_s.strip.presence || "Untitled"
+    item.channel_title = params[:channel].to_s.strip
+
+    if item.save
+      render json: playlist_payload(playlist)
+    else
+      render json: { error: item.errors.full_messages }, status: :unprocessable_entity
+    end
+  end
+
+  def remove_from_playlist
+    playlist = find_playlist_by_name
+    return render json: { playlist: { name: playlist_name }, items: [] } if playlist.blank?
+
+    video_id = params[:video_id].to_s.strip
+    if video_id.present?
+      playlist.playlist_items.where(video_id: video_id).delete_all
+    else
+      playlist.playlist_items.delete_all
+    end
+
+    render json: playlist_payload(playlist)
   end
 
   private
@@ -179,6 +249,34 @@ class MusicController < ApplicationController
 
   def render_api_error(data)
     render json: { error: data["error"] }, status: :bad_gateway
+  end
+
+  def playlist_payload(playlist)
+    {
+      playlist: { id: playlist.id, name: playlist.name },
+      items: playlist.playlist_items.order(created_at: :asc).map do |item|
+        {
+          id: item.id,
+          video_id: item.video_id,
+          title: item.title,
+          channel_title: item.channel_title
+        }
+      end
+    }
+  end
+
+  def playlist_name
+    name = params[:playlist_name].to_s.strip
+    name = "Watch Later" if name.blank?
+    name
+  end
+
+  def find_playlist_by_name
+    Playlist.where("lower(name) = ?", playlist_name.downcase).first
+  end
+
+  def find_or_create_playlist
+    find_playlist_by_name || Playlist.create!(name: playlist_name)
   end
 
   def build_links(title:, artist:, query: nil, video_id: nil, channel_id: nil, itunes_item: nil)
@@ -214,5 +312,99 @@ class MusicController < ApplicationController
 
   def debug_mode?
     Rails.env.development? || params[:debug].to_s == "1"
+  end
+
+  def parse_title_parts(title)
+    cleaned = sanitize_title(title)
+    left, right = split_title(cleaned)
+    { cleaned: cleaned, left: left, right: right }
+  end
+
+  def build_lyrics_candidates(title:, artist:, parsed_left:, parsed_right:, itunes_item:)
+    candidates = []
+
+    if parsed_left.present? && parsed_right.present?
+      if artist.present?
+        if includes_insensitive?(parsed_left, artist)
+          candidates << { source: "parsed_title", artist: parsed_left, title: parsed_right }
+        elsif includes_insensitive?(parsed_right, artist)
+          candidates << { source: "parsed_title", artist: parsed_right, title: parsed_left }
+        else
+          candidates << { source: "parsed_title", artist: parsed_left, title: parsed_right }
+          candidates << { source: "parsed_title_swap", artist: parsed_right, title: parsed_left }
+        end
+      else
+        candidates << { source: "parsed_title", artist: parsed_left, title: parsed_right }
+        candidates << { source: "parsed_title_swap", artist: parsed_right, title: parsed_left }
+      end
+    elsif artist.present? && title.present?
+      candidates << { source: "channel_title", artist: artist, title: sanitize_title(title) }
+    end
+
+    if itunes_item&.dig(:artist).present? && itunes_item&.dig(:title).present?
+      candidates << { source: "itunes", artist: itunes_item[:artist], title: itunes_item[:title] }
+    end
+
+    unique_by = {}
+    candidates.select do |candidate|
+      key = "#{candidate[:artist].to_s.downcase}|#{candidate[:title].to_s.downcase}"
+      next false if candidate[:artist].blank? || candidate[:title].blank?
+      next false if unique_by[key]
+      unique_by[key] = true
+      true
+    end
+  end
+
+  def sanitize_title(title)
+    text = title.to_s.dup
+    text.gsub!(/\[[^\]]*\]|\([^\)]*\)|\{[^}]*\}/, " ")
+    text.gsub!(/(official|lyrics?|mv|pv|music video|live|performance|studio|cover|remaster|hd|4k|visualizer|audio|full|ver\.|version)/i, " ")
+    text.gsub!(/\s+/, " ")
+    text.strip
+  end
+
+  def sanitize_artist(artist)
+    text = artist.to_s.dup
+    text.gsub!(/\b(topic|vevo|official|channel)\b/i, " ")
+    text.gsub!(/-+\s*topic\b/i, " ")
+    text.gsub!(/\s+/, " ")
+    text.strip
+  end
+
+  def split_title(text)
+    return [nil, nil] if text.blank?
+    match = text.match(/(.+?)\s*(?:-+|–|—|\||｜|\/|:)\s*(.+)/)
+    return [match[1].strip, match[2].strip] if match && match[1].present? && match[2].present?
+    [nil, nil]
+  end
+
+  def includes_insensitive?(text, fragment)
+    return false if fragment.blank?
+    text.to_s.downcase.include?(fragment.to_s.downcase)
+  end
+
+  def select_itunes_item(items, title:, artist:)
+    return items.first if items.blank?
+    normalized_title = sanitize_title(title).downcase
+    normalized_artist = sanitize_artist(artist).downcase
+
+    candidates = items.map do |item|
+      score = 0
+      item_title = item[:title].to_s.downcase
+      item_artist = item[:artist].to_s.downcase
+      score += 2 if normalized_title.present? && item_title.include?(normalized_title)
+      score += 1 if normalized_artist.present? && item_artist.include?(normalized_artist)
+      score -= 2 if normalized_title.present? && !item_title.include?(normalized_title)
+      score -= 1 if normalized_artist.present? && !item_artist.include?(normalized_artist)
+      { item: item, score: score }
+    end
+
+    best = candidates.max_by { |entry| entry[:score] }
+    return nil if best[:score] < 1
+    best[:item]
+  end
+
+  def lyrics_request_url(artist, title)
+    "#{ExternalInfoClient::LYRICS_URL}/#{CGI.escape(artist)}/#{CGI.escape(title)}"
   end
 end

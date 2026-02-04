@@ -10,6 +10,7 @@ export default class extends Controller {
     "results",
     "player",
     "playlist",
+    "playlistName",
     "nowPlaying",
     "trackInfo",
     "channelInfo",
@@ -21,7 +22,15 @@ export default class extends Controller {
   connect() {
     this.playlistItems = []
     this.playerReady = false
+    this.currentVideoId = null
     this.loadYouTubeApi().then((YT) => this.buildPlayer(YT))
+
+    if (this.hasPlaylistNameTarget) {
+      if (!this.playlistNameTarget.value.trim()) {
+        this.playlistNameTarget.value = "Watch Later"
+      }
+      this.loadPlaylist()
+    }
   }
 
   disconnect() {
@@ -58,46 +67,60 @@ export default class extends Controller {
     this.fetchDetails(videoId)
   }
 
-  addToPlaylist(event) {
+  async addToPlaylist(event) {
     const button = event.currentTarget
     const videoId = button.dataset.videoId
     if (!videoId) return
-    if (this.playlistItems.some((item) => item.id === videoId)) return
+    if (this.playlistItems.some((item) => item.video_id === videoId)) return
 
-    this.playlistItems.push({
-      id: videoId,
-      title: button.dataset.title || "Untitled",
-      channel: button.dataset.channel || ""
-    })
-    this.renderPlaylist()
+    try {
+      await this.persistPlaylistItem({
+        video_id: videoId,
+        title: button.dataset.title || "Untitled",
+        channel: button.dataset.channel || ""
+      })
+    } catch (error) {
+      this.setStatus("プレイリストの保存に失敗しました。", "error")
+    }
   }
 
-  removeFromPlaylist(event) {
-    const index = Number(event.currentTarget.dataset.index)
-    if (Number.isNaN(index)) return
-    this.playlistItems.splice(index, 1)
-    this.renderPlaylist()
+  async removeFromPlaylist(event) {
+    const videoId = event.currentTarget.dataset.videoId
+    if (!videoId) return
+
+    try {
+      await this.removePlaylistItem(videoId)
+    } catch (error) {
+      this.setStatus("プレイリストの更新に失敗しました。", "error")
+    }
   }
 
   playPlaylist() {
     if (!this.playerReady || this.playlistItems.length === 0) return
-    const ids = this.playlistItems.map((item) => item.id)
+    const ids = this.playlistItems.map((item) => item.video_id).filter(Boolean)
     this.player.loadPlaylist(ids, 0)
+    this.currentVideoId = ids[0]
     this.fetchDetails(ids[0])
   }
 
   playFromPlaylist(event) {
     const index = Number(event.currentTarget.dataset.index)
     if (!this.playerReady || Number.isNaN(index)) return
-    const ids = this.playlistItems.map((item) => item.id)
+    const ids = this.playlistItems.map((item) => item.video_id).filter(Boolean)
     this.player.loadPlaylist(ids, index)
     const item = this.playlistItems[index]
-    if (item) this.fetchDetails(item.id)
+    if (item) {
+      this.currentVideoId = item.video_id
+      this.fetchDetails(item.video_id)
+    }
   }
 
-  clearPlaylist() {
-    this.playlistItems = []
-    this.renderPlaylist()
+  async clearPlaylist() {
+    try {
+      await this.clearPlaylistItems()
+    } catch (error) {
+      this.setStatus("プレイリストの削除に失敗しました。", "error")
+    }
   }
 
   play() {
@@ -163,6 +186,91 @@ export default class extends Controller {
     }
   }
 
+  async loadPlaylist() {
+    const name = this.currentPlaylistName()
+    if (!name) return
+
+    try {
+      const response = await fetch(`/music/playlist?playlist_name=${encodeURIComponent(name)}`)
+      const data = await response.json()
+      if (!response.ok || data.error) {
+        throw new Error(data.error?.message || "playlist_failed")
+      }
+      this.applyPlaylistData(data)
+    } catch (error) {
+      this.setStatus("プレイリストの読み込みに失敗しました。", "error")
+    }
+  }
+
+  async persistPlaylistItem(payload) {
+    const response = await fetch("/music/playlist_items", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-CSRF-Token": this.csrfToken()
+      },
+      body: JSON.stringify({
+        playlist_name: this.currentPlaylistName(),
+        video_id: payload.video_id,
+        title: payload.title,
+        channel: payload.channel
+      })
+    })
+    const data = await response.json()
+    if (!response.ok || data.error) {
+      throw new Error(data.error?.message || "playlist_save_failed")
+    }
+    this.applyPlaylistData(data)
+  }
+
+  async removePlaylistItem(videoId) {
+    const params = new URLSearchParams({
+      playlist_name: this.currentPlaylistName(),
+      video_id: videoId
+    })
+    const response = await fetch(`/music/playlist_items?${params}`, {
+      method: "DELETE",
+      headers: {
+        "X-CSRF-Token": this.csrfToken()
+      }
+    })
+    const data = await response.json()
+    if (!response.ok || data.error) {
+      throw new Error(data.error?.message || "playlist_delete_failed")
+    }
+    this.applyPlaylistData(data)
+  }
+
+  async clearPlaylistItems() {
+    const params = new URLSearchParams({
+      playlist_name: this.currentPlaylistName()
+    })
+    const response = await fetch(`/music/playlist_items?${params}`, {
+      method: "DELETE",
+      headers: {
+        "X-CSRF-Token": this.csrfToken()
+      }
+    })
+    const data = await response.json()
+    if (!response.ok || data.error) {
+      throw new Error(data.error?.message || "playlist_clear_failed")
+    }
+    this.applyPlaylistData(data)
+  }
+
+  applyPlaylistData(data) {
+    if (data.playlist?.name && this.hasPlaylistNameTarget) {
+      this.playlistNameTarget.value = data.playlist.name
+    }
+    this.playlistItems = (data.items || []).map((item) => ({
+      id: item.id,
+      video_id: item.video_id,
+      title: item.title,
+      channel: item.channel_title
+    }))
+    this.renderPlaylist()
+  }
+
   renderResults(items) {
     if (items.length === 0) {
       this.resultsTarget.innerHTML = "<p class=\"empty\">検索結果がありません</p>"
@@ -200,13 +308,14 @@ export default class extends Controller {
       .map((item, index) => {
         const title = this.escapeHtml(item.title)
         const channel = this.escapeHtml(item.channel)
+        const videoId = this.escapeAttr(item.video_id || "")
         return `
           <li class="playlist-item">
             <button class="playlist-play" type="button" data-action="yt-music#playFromPlaylist" data-index="${index}">
               <span class="playlist-title">${title}</span>
               <span class="playlist-meta">${channel}</span>
             </button>
-            <button class="btn ghost small" type="button" data-action="yt-music#removeFromPlaylist" data-index="${index}">Remove</button>
+            <button class="btn ghost small" type="button" data-action="yt-music#removeFromPlaylist" data-video-id="${videoId}">Remove</button>
           </li>
         `
       })
@@ -288,10 +397,14 @@ export default class extends Controller {
       `
       : "<p class=\"detail-muted\">リリース情報がありません</p>"
 
-    const lyricsText = data.lyrics?.text ? this.truncateLines(data.lyrics.text, 12) : ""
+    const lyricsFull = data.lyrics?.text || ""
+    const lyricsTruncated = data.lyrics?.text ? this.truncateLines(data.lyrics.text, 12) : ""
+    const lyricsText = lyricsTruncated
+    const needsToggle = lyricsFull && lyricsFull !== lyricsTruncated
     const lyricsHtml = lyricsText
       ? `
-        <pre class="lyrics">${this.escapeHtml(lyricsText)}</pre>
+        <pre class="lyrics" data-expanded="false" data-full="${this.escapeAttr(lyricsFull)}" data-truncated="${this.escapeAttr(lyricsTruncated)}">${this.escapeHtml(lyricsTruncated)}</pre>
+        ${needsToggle ? `<button class="btn ghost small" type="button" data-action="yt-music#toggleLyrics">もっと見る</button>` : ""}
         <p class="lyrics-source">source: ${this.escapeHtml(data.lyrics?.source || "lyrics")}</p>
       `
       : "<p class=\"detail-muted\">歌詞を取得できませんでした</p>"
@@ -333,8 +446,36 @@ export default class extends Controller {
     `
   }
 
+  toggleLyrics(event) {
+    const button = event.currentTarget
+    const container = button.closest(".external-section")
+    if (!container) return
+    const pre = container.querySelector(".lyrics")
+    if (!pre) return
+
+    const expanded = pre.dataset.expanded === "true"
+    const fullText = pre.dataset.full || pre.textContent
+    const truncatedText = pre.dataset.truncated || pre.textContent
+
+    if (expanded) {
+      pre.textContent = truncatedText
+      pre.dataset.expanded = "false"
+      button.textContent = "もっと見る"
+    } else {
+      pre.textContent = fullText
+      pre.dataset.expanded = "true"
+      button.textContent = "閉じる"
+    }
+  }
+
+  currentPlaylistName() {
+    const name = this.hasPlaylistNameTarget ? this.playlistNameTarget.value.trim() : ""
+    return name || "Watch Later"
+  }
+
   playVideo(videoId) {
     if (!this.playerReady) return
+    this.currentVideoId = videoId
     this.player.loadVideoById(videoId)
   }
 
@@ -367,11 +508,28 @@ export default class extends Controller {
         onReady: () => {
           this.playerReady = true
         },
+        onStateChange: (event) => {
+          this.handlePlayerStateChange(event)
+        },
         onAutoplayBlocked: () => {
           this.autoplayNoticeTarget.textContent = "自動再生がブロックされました。Playボタンを押してください。"
         }
       }
     })
+  }
+
+  handlePlayerStateChange(event) {
+    const state = event?.data
+    if (!this.playerReady) return
+    if (!window.YT || !window.YT.PlayerState) return
+    if (![window.YT.PlayerState.PLAYING, window.YT.PlayerState.BUFFERING].includes(state)) return
+
+    const data = this.player.getVideoData ? this.player.getVideoData() : null
+    const videoId = data?.video_id
+    if (!videoId || videoId === this.currentVideoId) return
+
+    this.currentVideoId = videoId
+    this.fetchDetails(videoId)
   }
 
   setStatus(message, state) {
@@ -400,6 +558,11 @@ export default class extends Controller {
       return `${hours}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`
     }
     return `${minutes}:${String(seconds).padStart(2, "0")}`
+  }
+
+  csrfToken() {
+    const meta = document.querySelector("meta[name='csrf-token']")
+    return meta ? meta.content : ""
   }
 
   formatMillis(value) {

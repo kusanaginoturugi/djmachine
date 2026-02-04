@@ -340,6 +340,11 @@ body {
   white-space: pre-wrap;
   max-height: 220px;
   overflow: auto;
+  transition: max-height 0.2s ease;
+}
+
+.lyrics[data-expanded="true"] {
+  max-height: none;
 }
 
 .lyrics-source {
@@ -417,13 +422,46 @@ body {
 .panel-head {
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: flex-start;
+  flex-wrap: wrap;
   gap: 10px;
+}
+
+.panel-title {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1 1 220px;
+  min-width: 0;
+}
+
+.playlist-name {
+  display: grid;
+  gap: 6px;
+}
+
+.playlist-name label {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  color: var(--muted);
+}
+
+.playlist-input {
+  width: 100%;
+  max-width: 240px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: #fff;
+  font-size: 0.9rem;
 }
 
 .playlist-actions {
   display: flex;
   gap: 8px;
+  flex-wrap: wrap;
+  margin-left: auto;
 }
 
 .playlist {
