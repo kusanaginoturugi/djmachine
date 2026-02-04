@@ -254,6 +254,7 @@ body {
   display: grid;
   gap: 14px;
   margin-top: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
 }
 
 .detail-card {
@@ -268,6 +269,14 @@ body {
   font-size: 0.9rem;
   text-transform: uppercase;
   letter-spacing: 0.18em;
+  color: var(--muted);
+}
+
+.detail-label {
+  margin: 0 0 6px;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
   color: var(--muted);
 }
 
@@ -298,6 +307,93 @@ body {
   line-height: 1.4;
 }
 
+.external-section {
+  margin-bottom: 14px;
+}
+
+.external-section:last-child {
+  margin-bottom: 0;
+}
+
+.itunes-card {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.itunes-art {
+  width: 64px;
+  height: 64px;
+  border-radius: 12px;
+  object-fit: cover;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+.lyrics {
+  margin: 0;
+  padding: 10px 12px;
+  background: #fff5e3;
+  border-radius: 12px;
+  border: 1px solid rgba(0, 0, 0, 0.05);
+  font-family: "Noto Sans JP", sans-serif;
+  font-size: 0.85rem;
+  white-space: pre-wrap;
+  max-height: 220px;
+  overflow: auto;
+}
+
+.lyrics-source {
+  margin: 6px 0 0;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.link-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.mini-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: #fff;
+  border: 1px solid var(--line);
+  color: var(--ink);
+  font-size: 0.8rem;
+  text-decoration: none;
+}
+
+.mini-link:hover {
+  box-shadow: 0 8px 16px rgba(30, 20, 10, 0.08);
+}
+
+.debug-panel {
+  margin-top: 12px;
+  background: #f1efe9;
+  border-radius: 12px;
+  border: 1px dashed var(--line);
+  padding: 10px 12px;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.debug-panel summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.debug-panel pre {
+  margin: 10px 0 0;
+  white-space: pre-wrap;
+  font-family: "Noto Sans JP", sans-serif;
+  font-size: 0.75rem;
+  color: #3c372f;
+}
+
 .channel-card {
   display: flex;
   gap: 12px;
@@ -315,6 +411,7 @@ body {
 .playlist-panel {
   display: grid;
   gap: 12px;
+  align-self: start;
 }
 
 .panel-head {

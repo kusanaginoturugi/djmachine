@@ -1,6 +1,6 @@
 <% content_for :title, "Music Room" %>
 
-<div class="music-app" data-controller="yt-music">
+<div class="music-app" data-controller="yt-music" data-yt-music-debug-value="<%= Rails.env.development? %>">
   <header class="music-header">
     <div>
       <p class="music-eyebrow">Music Lab</p>
@@ -55,6 +55,12 @@
           <h3>Artist / Channel</h3>
           <div class="detail-body" data-yt-music-target="channelInfo">
             <p class="detail-muted">アーティスト情報をここに表示</p>
+          </div>
+        </div>
+        <div class="detail-card">
+          <h3>Lyrics / Links</h3>
+          <div class="detail-body" data-yt-music-target="externalInfo">
+            <p class="detail-muted">外部情報をここに表示</p>
           </div>
         </div>
       </div>

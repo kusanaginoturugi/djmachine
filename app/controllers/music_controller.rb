@@ -1,3 +1,5 @@
+require "cgi"
+
 class MusicController < ApplicationController
   def index
   end
@@ -65,6 +67,98 @@ class MusicController < ApplicationController
     }
   end
 
+  def external
+    debug = debug_mode?
+    debug_info = {}
+
+    title = params[:title].to_s.strip
+    artist = params[:artist].to_s.strip
+    query = params[:q].to_s.strip
+    query = [title, artist].join(" ").strip if query.blank?
+    if debug
+      debug_info[:request] = {
+        title: title,
+        artist: artist,
+        query: query
+      }
+    end
+
+    if query.blank?
+      response = {
+        itunes: { items: [] },
+        lyrics: nil,
+        links: build_links(
+          title: title,
+          artist: artist,
+          video_id: params[:video_id].to_s.strip,
+          channel_id: params[:channel_id].to_s.strip
+        )
+      }
+      response[:debug] = debug_info if debug
+      return render json: response
+    end
+
+    itunes_data = external_client.itunes_search(term: query, limit: 3)
+    return render_api_error(itunes_data) if api_error?(itunes_data)
+
+    items = Array(itunes_data["results"]).map do |item|
+      artwork = item["artworkUrl100"]
+      {
+        title: item["trackName"],
+        artist: item["artistName"],
+        album: item["collectionName"],
+        release_date: item["releaseDate"],
+        genre: item["primaryGenreName"],
+        artwork: artwork&.gsub("100x100", "300x300"),
+        preview_url: item["previewUrl"],
+        track_url: item["trackViewUrl"],
+        artist_url: item["artistViewUrl"],
+        album_url: item["collectionViewUrl"],
+        track_time_ms: item["trackTimeMillis"]
+      }
+    end
+
+    top_item = items.first
+    lyrics_text = nil
+    lyrics_debug = {}
+    if top_item&.dig(:artist).present? && top_item&.dig(:title).present?
+      lyrics_data = external_client.lyrics(artist: top_item[:artist], title: top_item[:title])
+      if lyrics_data.is_a?(Hash) && lyrics_data["lyrics"].present?
+        lyrics_text = lyrics_data["lyrics"]
+        lyrics_debug[:status] = "ok"
+      else
+        lyrics_debug[:status] = "error"
+        lyrics_debug[:error] = lyrics_data["error"] || "no_lyrics"
+      end
+    else
+      lyrics_debug[:status] = "skipped"
+      lyrics_debug[:reason] = "no_itunes_match"
+    end
+
+    if debug
+      debug_info[:itunes] = {
+        count: items.size,
+        top: top_item&.slice(:title, :artist, :album, :release_date, :genre)
+      }
+      debug_info[:lyrics] = lyrics_debug
+    end
+
+    response = {
+      itunes: { items: items },
+      lyrics: lyrics_text.present? ? { text: lyrics_text, source: "lyrics.ovh" } : nil,
+      links: build_links(
+        title: title,
+        artist: artist,
+        query: query,
+        video_id: params[:video_id].to_s.strip,
+        channel_id: params[:channel_id].to_s.strip,
+        itunes_item: top_item
+      )
+    }
+    response[:debug] = debug_info if debug
+    render json: response
+  end
+
   private
 
   def youtube_client
@@ -75,11 +169,50 @@ class MusicController < ApplicationController
     ENV["YOUTUBE_API_KEY"]
   end
 
+  def external_client
+    @external_client ||= ExternalInfoClient.new
+  end
+
   def api_error?(data)
     data.is_a?(Hash) && data["error"].present?
   end
 
   def render_api_error(data)
     render json: { error: data["error"] }, status: :bad_gateway
+  end
+
+  def build_links(title:, artist:, query: nil, video_id: nil, channel_id: nil, itunes_item: nil)
+    links = []
+    if video_id.present?
+      links << { label: "YouTube", url: "https://www.youtube.com/watch?v=#{video_id}" }
+    end
+    if channel_id.present?
+      links << { label: "Channel", url: "https://www.youtube.com/channel/#{channel_id}" }
+    end
+    if itunes_item&.dig(:track_url).present?
+      links << { label: "Apple Music", url: itunes_item[:track_url] }
+    end
+
+    wiki_term = itunes_item&.dig(:artist).presence || artist.presence || title.presence || query.to_s
+    if wiki_term.present?
+      links << {
+        label: "Wikipedia",
+        url: "https://ja.wikipedia.org/wiki/Special:Search?search=#{CGI.escape(wiki_term)}"
+      }
+    end
+
+    review_term = [itunes_item&.dig(:title).presence || title.presence, itunes_item&.dig(:artist).presence || artist.presence]
+                  .compact.join(" ").strip
+    if review_term.present?
+      links << {
+        label: "レビュー検索",
+        url: "https://duckduckgo.com/?q=#{CGI.escape("#{review_term} レビュー")}"
+      }
+    end
+    links
+  end
+
+  def debug_mode?
+    Rails.env.development? || params[:debug].to_s == "1"
   end
 end

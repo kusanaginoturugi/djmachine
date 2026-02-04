@@ -1,6 +1,10 @@
 import { Controller } from "@hotwired/stimulus"
 
 export default class extends Controller {
+  static values = {
+    debug: Boolean
+  }
+
   static targets = [
     "query",
     "results",
@@ -9,6 +13,7 @@ export default class extends Controller {
     "nowPlaying",
     "trackInfo",
     "channelInfo",
+    "externalInfo",
     "autoplayNotice",
     "status"
   ]
@@ -124,6 +129,40 @@ export default class extends Controller {
     }
   }
 
+  async fetchExternal(video) {
+    if (!this.hasExternalInfoTarget) return
+
+    const title = video.title || ""
+    const artist = video.channel_title || ""
+    const query = `${title} ${artist}`.trim()
+    if (!query) {
+      this.externalInfoTarget.innerHTML = "<p class=\"detail-muted\">外部情報がありません</p>"
+      return
+    }
+
+    this.externalInfoTarget.innerHTML = "<p class=\"detail-muted\">外部情報を取得中...</p>"
+    try {
+      const params = new URLSearchParams({
+        q: query,
+        title: title,
+        artist: artist,
+        video_id: video.id || "",
+        channel_id: video.channel_id || ""
+      })
+      if (this.hasDebugValue && this.debugValue) {
+        params.append("debug", "1")
+      }
+      const response = await fetch(`/music/external?${params}`)
+      const data = await response.json()
+      if (!response.ok || data.error) {
+        throw new Error(data.error?.message || "external_failed")
+      }
+      this.renderExternal(data)
+    } catch (error) {
+      this.externalInfoTarget.innerHTML = "<p class=\"detail-muted\">外部情報を取得できませんでした</p>"
+    }
+  }
+
   renderResults(items) {
     if (items.length === 0) {
       this.resultsTarget.innerHTML = "<p class=\"empty\">検索結果がありません</p>"
@@ -218,6 +257,80 @@ export default class extends Controller {
       </div>
       <p class="detail-desc">${channelDesc.slice(0, 240)}${channelDesc.length > 240 ? "..." : ""}</p>
     `
+
+    this.fetchExternal(video)
+  }
+
+  renderExternal(data) {
+    const itunesItems = data.itunes?.items || []
+    const top = itunesItems[0]
+
+    const releaseDate = top?.release_date ? this.formatDate(top.release_date) : ""
+    const trackTime = top?.track_time_ms ? this.formatMillis(top.track_time_ms) : ""
+    const genre = top?.genre || ""
+    const album = top?.album || ""
+
+    const releaseHtml = top
+      ? `
+        <div class="itunes-card">
+          ${top.artwork ? `<img class="itunes-art" src="${this.escapeAttr(top.artwork)}" alt="">` : ""}
+          <div>
+            <p class="detail-title">${this.escapeHtml(top.title || "Untitled")}</p>
+            <p class="detail-meta">${this.escapeHtml(top.artist || "")}${album ? ` • ${this.escapeHtml(album)}` : ""}</p>
+            <div class="detail-stats">
+              ${releaseDate ? `<span>${releaseDate}</span>` : ""}
+              ${genre ? `<span>${this.escapeHtml(genre)}</span>` : ""}
+              ${trackTime ? `<span>${trackTime}</span>` : ""}
+            </div>
+            ${top.preview_url ? `<a class="mini-link" href="${this.escapeAttr(top.preview_url)}" target="_blank" rel="noopener">Preview</a>` : ""}
+          </div>
+        </div>
+      `
+      : "<p class=\"detail-muted\">リリース情報がありません</p>"
+
+    const lyricsText = data.lyrics?.text ? this.truncateLines(data.lyrics.text, 12) : ""
+    const lyricsHtml = lyricsText
+      ? `
+        <pre class="lyrics">${this.escapeHtml(lyricsText)}</pre>
+        <p class="lyrics-source">source: ${this.escapeHtml(data.lyrics?.source || "lyrics")}</p>
+      `
+      : "<p class=\"detail-muted\">歌詞を取得できませんでした</p>"
+
+    const links = Array.isArray(data.links) ? data.links : []
+    const linksHtml = links.length
+      ? `
+        <div class="link-list">
+          ${links
+            .map((link) => `<a class="mini-link" href="${this.escapeAttr(link.url)}" target="_blank" rel="noopener">${this.escapeHtml(link.label)}</a>`)
+            .join("")}
+        </div>
+      `
+      : "<p class=\"detail-muted\">関連リンクがありません</p>"
+
+    const debugHtml = data.debug
+      ? `
+        <details class="debug-panel">
+          <summary>Debug</summary>
+          <pre>${this.escapeHtml(JSON.stringify(data.debug, null, 2))}</pre>
+        </details>
+      `
+      : ""
+
+    this.externalInfoTarget.innerHTML = `
+      <div class="external-section">
+        <p class="detail-label">Release</p>
+        ${releaseHtml}
+      </div>
+      <div class="external-section">
+        <p class="detail-label">Lyrics</p>
+        ${lyricsHtml}
+      </div>
+      <div class="external-section">
+        <p class="detail-label">Links</p>
+        ${linksHtml}
+      </div>
+      ${debugHtml}
+    `
   }
 
   playVideo(videoId) {
@@ -287,6 +400,20 @@ export default class extends Controller {
       return `${hours}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`
     }
     return `${minutes}:${String(seconds).padStart(2, "0")}`
+  }
+
+  formatMillis(value) {
+    const totalSeconds = Math.round(Number(value) / 1000)
+    if (Number.isNaN(totalSeconds)) return ""
+    const minutes = Math.floor(totalSeconds / 60)
+    const seconds = totalSeconds % 60
+    return `${minutes}:${String(seconds).padStart(2, "0")}`
+  }
+
+  truncateLines(value, maxLines) {
+    const lines = String(value).split(/\r?\n/)
+    if (lines.length <= maxLines) return value
+    return `${lines.slice(0, maxLines).join("\n")}\n...`
   }
 
   escapeHtml(value) {

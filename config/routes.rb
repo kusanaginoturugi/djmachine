@@ -15,4 +15,5 @@ Rails.application.routes.draw do
   get "music" => "music#index"
   get "music/search" => "music#search"
   get "music/details" => "music#details"
+  get "music/external" => "music#external"
 end
