@@ -15,6 +15,7 @@ export default class extends Controller {
     "trackInfo",
     "channelInfo",
     "externalInfo",
+    "translation",
     "autoplayNotice",
     "status"
   ]
@@ -409,6 +410,15 @@ export default class extends Controller {
       `
       : "<p class=\"detail-muted\">歌詞を取得できませんでした</p>"
 
+    const translationHtml = lyricsFull
+      ? `
+        <div class="translation" data-yt-music-target="translation">
+          <p class="detail-muted">未翻訳</p>
+        </div>
+        <button class="btn ghost small" type="button" data-action="yt-music#translateLyrics">翻訳する</button>
+      `
+      : "<p class=\"detail-muted\">歌詞がないため翻訳できません</p>"
+
     const links = Array.isArray(data.links) ? data.links : []
     const linksHtml = links.length
       ? `
@@ -439,6 +449,10 @@ export default class extends Controller {
         ${lyricsHtml}
       </div>
       <div class="external-section">
+        <p class="detail-label">Translation</p>
+        ${translationHtml}
+      </div>
+      <div class="external-section">
         <p class="detail-label">Links</p>
         ${linksHtml}
       </div>
@@ -465,6 +479,48 @@ export default class extends Controller {
       pre.textContent = fullText
       pre.dataset.expanded = "true"
       button.textContent = "閉じる"
+    }
+  }
+
+  async translateLyrics(event) {
+    const button = event.currentTarget
+    const container = button.closest(".external-section")
+    if (!container) return
+    const root = this.hasExternalInfoTarget ? this.externalInfoTarget : container.parentElement
+    const pre = root?.querySelector(".lyrics")
+    const text = pre?.dataset?.full || pre?.textContent || ""
+    if (!text.trim()) return
+
+    if (this.hasTranslationTarget) {
+      this.translationTarget.innerHTML = "<p class=\"detail-muted\">翻訳中...</p>"
+    }
+
+    try {
+      const response = await fetch("/music/translate", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-CSRF-Token": this.csrfToken()
+        },
+        body: JSON.stringify({
+          text: text,
+          source: "auto",
+          target: "ja"
+        })
+      })
+      const data = await response.json()
+      if (!response.ok || data.error) {
+        throw new Error(data.error?.message || "translate_failed")
+      }
+      if (this.hasTranslationTarget) {
+        this.translationTarget.innerHTML = `
+          <pre class="translation-text">${this.escapeHtml(data.text || "")}</pre>
+        `
+      }
+    } catch (error) {
+      if (this.hasTranslationTarget) {
+        this.translationTarget.innerHTML = "<p class=\"detail-muted\">翻訳に失敗しました</p>"
+      }
     }
   }
 

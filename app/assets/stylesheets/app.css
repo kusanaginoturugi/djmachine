@@ -347,6 +347,19 @@ body {
   max-height: none;
 }
 
+.translation-text {
+  margin: 0;
+  padding: 10px 12px;
+  background: #eef6ff;
+  border-radius: 12px;
+  border: 1px solid rgba(0, 0, 0, 0.05);
+  font-family: "Noto Sans JP", sans-serif;
+  font-size: 0.85rem;
+  white-space: pre-wrap;
+  max-height: 220px;
+  overflow: auto;
+}
+
 .lyrics-source {
   margin: 6px 0 0;
   font-size: 0.75rem;

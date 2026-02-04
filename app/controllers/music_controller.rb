@@ -194,6 +194,22 @@ class MusicController < ApplicationController
     render json: response
   end
 
+  def translate
+    text = params[:text].to_s
+    return render json: { error: "missing_text" }, status: :bad_request if text.blank?
+
+    source = params[:source].presence || "auto"
+    target = params[:target].presence || "ja"
+
+    data = libretranslate_client.translate(text: text, source: source, target: target)
+    return render_api_error(data) if api_error?(data)
+
+    render json: {
+      text: data["text"],
+      detected: data["detected"]
+    }
+  end
+
   def playlist
     playlist = find_or_create_playlist
     render json: playlist_payload(playlist)
@@ -241,6 +257,10 @@ class MusicController < ApplicationController
 
   def external_client
     @external_client ||= ExternalInfoClient.new
+  end
+
+  def libretranslate_client
+    @libretranslate_client ||= LibreTranslateClient.new
   end
 
   def api_error?(data)
@@ -365,8 +385,9 @@ class MusicController < ApplicationController
 
   def sanitize_artist(artist)
     text = artist.to_s.dup
+    text.gsub!(/\s*-\s*topic\b/i, " ")
     text.gsub!(/\b(topic|vevo|official|channel)\b/i, " ")
-    text.gsub!(/-+\s*topic\b/i, " ")
+    text.gsub!(/\s*[-–—|｜]+\s*$/, " ")
     text.gsub!(/\s+/, " ")
     text.strip
   end
