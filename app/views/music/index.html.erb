@@ -1,0 +1,74 @@
+<% content_for :title, "Music Room" %>
+
+<div class="music-app" data-controller="yt-music">
+  <header class="music-header">
+    <div>
+      <p class="music-eyebrow">Music Lab</p>
+      <h1>Small Player, Rich Story</h1>
+      <p class="music-subtitle">YouTubeの動画を使って、音楽情報と背景を深掘りする体験を試作します。</p>
+    </div>
+    <div class="music-note">
+      <p>初回再生はユーザー操作が必要です。検索してから再生ボタンを押してください。</p>
+    </div>
+  </header>
+
+  <section class="music-grid">
+    <div class="panel search-panel">
+      <form class="search-form" data-action="submit->yt-music#search">
+        <label class="search-label" for="music-query">Search</label>
+        <div class="search-row">
+          <input id="music-query" class="search-input" type="search" placeholder="曲名 / アーティスト" data-yt-music-target="query" required>
+          <button class="btn primary" type="submit">検索</button>
+        </div>
+      </form>
+      <div class="status" data-yt-music-target="status"></div>
+      <div class="results" data-yt-music-target="results"></div>
+    </div>
+
+    <div class="panel info-panel">
+      <div class="player-block">
+        <div class="player-shell">
+          <div class="player" data-yt-music-target="player"></div>
+        </div>
+        <div class="player-controls">
+          <button class="btn ghost" type="button" data-action="yt-music#prev">Prev</button>
+          <button class="btn primary" type="button" data-action="yt-music#play">Play</button>
+          <button class="btn ghost" type="button" data-action="yt-music#pause">Pause</button>
+          <button class="btn ghost" type="button" data-action="yt-music#next">Next</button>
+        </div>
+        <div class="autoplay" data-yt-music-target="autoplayNotice"></div>
+      </div>
+
+      <div class="now-playing" data-yt-music-target="nowPlaying">
+        <p class="now-title">Select a track</p>
+        <p class="now-meta">検索して再生すると、詳細情報が表示されます。</p>
+      </div>
+
+      <div class="detail-grid">
+        <div class="detail-card">
+          <h3>Track</h3>
+          <div class="detail-body" data-yt-music-target="trackInfo">
+            <p class="detail-muted">曲情報をここに表示</p>
+          </div>
+        </div>
+        <div class="detail-card">
+          <h3>Artist / Channel</h3>
+          <div class="detail-body" data-yt-music-target="channelInfo">
+            <p class="detail-muted">アーティスト情報をここに表示</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel playlist-panel">
+      <div class="panel-head">
+        <h2>Playlist</h2>
+        <div class="playlist-actions">
+          <button class="btn primary" type="button" data-action="yt-music#playPlaylist">Play</button>
+          <button class="btn ghost" type="button" data-action="yt-music#clearPlaylist">Clear</button>
+        </div>
+      </div>
+      <ol class="playlist" data-yt-music-target="playlist"></ol>
+    </div>
+  </section>
+</div>
