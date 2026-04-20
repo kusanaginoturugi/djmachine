@@ -1,6 +1,7 @@
 name: CI
 
 on:
+  workflow_dispatch:
   pull_request:
   push:
     branches: [ main ]
@@ -16,6 +17,7 @@ jobs:
       - name: Set up Ruby
         uses: ruby/setup-ruby@v1
         with:
+          ruby-version: .ruby-version
           bundler-cache: true
 
       - name: Scan for common Rails security vulnerabilities using static analysis
@@ -34,6 +36,7 @@ jobs:
       - name: Set up Ruby
         uses: ruby/setup-ruby@v1
         with:
+          ruby-version: .ruby-version
           bundler-cache: true
 
       - name: Scan for security vulnerabilities in JavaScript dependencies
@@ -50,6 +53,7 @@ jobs:
       - name: Set up Ruby
         uses: ruby/setup-ruby@v1
         with:
+          ruby-version: .ruby-version
           bundler-cache: true
 
       - name: Prepare RuboCop cache
@@ -81,6 +85,7 @@ jobs:
       - name: Set up Ruby
         uses: ruby/setup-ruby@v1
         with:
+          ruby-version: .ruby-version
           bundler-cache: true
 
       - name: Run tests
@@ -106,6 +111,7 @@ jobs:
       - name: Set up Ruby
         uses: ruby/setup-ruby@v1
         with:
+          ruby-version: .ruby-version
           bundler-cache: true
 
       - name: Run System Tests
@@ -122,3 +128,28 @@ jobs:
           name: screenshots
           path: ${{ github.workspace }}/tmp/screenshots
           if-no-files-found: ignore
+
+  deploy:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs:
+      - scan_ruby
+      - scan_js
+      - lint
+      - test
+      - system-test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy to production server
+        uses: appleboy/ssh-action@v1.2.2
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          port: ${{ secrets.EC2_PORT }}
+          username: ubuntu
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            cd /home/ubuntu/djmachine
+            git config core.fileMode false
+            git fetch origin
+            git checkout origin/main -- scripts/deploy.sh
+            bash /home/ubuntu/djmachine/scripts/deploy.sh
