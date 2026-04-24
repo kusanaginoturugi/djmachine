@@ -60,7 +60,7 @@ class LibreTranslateClient
 
   def split_text(text, max_chars:)
     lines = text.to_s.split(/\r?\n/)
-    return [text.to_s] if lines.empty?
+    return [ text.to_s ] if lines.empty?
 
     chunks = []
     current = []
@@ -70,7 +70,7 @@ class LibreTranslateClient
       line_length = line.length + (current.empty? ? 0 : 1)
       if current_len + line_length > max_chars && current.any?
         chunks << current.join("\n")
-        current = [line]
+        current = [ line ]
         current_len = line.length
       else
         current << line

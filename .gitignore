@@ -8,6 +8,7 @@
 
 # Ignore bundler config.
 /.bundle
+/vendor/bundle
 
 # Ignore all environment files.
 /.env*
@@ -34,3 +35,7 @@
 
 # Ignore key files for decrypting credentials and more.
 /config/*.key
+
+# Ignore key files for decrypting credentials and more.
+/config/*.key
+
