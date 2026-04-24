@@ -20,10 +20,21 @@ bundle install
 bin/rails db:migrate
 ```
 
-## 環境変数
+## Credentials / 環境変数
+`YOUTUBE_API_KEY` は Rails credentials に保存します。
+
+まず `bin/rails secret` で `secret_key_base` 用の値を生成してから、`bin/rails credentials:edit` で以下を設定します。
+
+```yaml
+secret_key_base: GENERATED_SECRET_KEY_BASE
+youtube:
+  api_key: xxxxxxxxxxxxxxxx
 ```
-YOUTUBE_API_KEY=xxxxxxxxxxxxxxxx
-# 任意（未設定時は http://localhost:65000）
+
+任意の設定だけ環境変数で渡します。
+
+```bash
+# 未設定時は http://localhost:65000
 LIBRETRANSLATE_URL=http://localhost:65000
 ```
 

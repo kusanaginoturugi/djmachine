@@ -252,7 +252,7 @@ class MusicController < ApplicationController
   end
 
   def api_key
-    ENV["YOUTUBE_API_KEY"]
+    Rails.application.credentials.dig(:youtube, :api_key)
   end
 
   def external_client
