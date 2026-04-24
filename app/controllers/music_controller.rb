@@ -74,7 +74,7 @@ class MusicController < ApplicationController
     title = params[:title].to_s.strip
     artist = params[:artist].to_s.strip
     query = params[:q].to_s.strip
-    query = [title, artist].join(" ").strip if query.blank?
+    query = [ title, artist ].join(" ").strip if query.blank?
     title_parse = parse_title_parts(title)
     artist_sanitized = sanitize_artist(artist)
     if debug
@@ -319,7 +319,7 @@ class MusicController < ApplicationController
       }
     end
 
-    review_term = [itunes_item&.dig(:title).presence || title.presence, itunes_item&.dig(:artist).presence || artist.presence]
+    review_term = [ itunes_item&.dig(:title).presence || title.presence, itunes_item&.dig(:artist).presence || artist.presence ]
                   .compact.join(" ").strip
     if review_term.present?
       links << {
@@ -393,10 +393,10 @@ class MusicController < ApplicationController
   end
 
   def split_title(text)
-    return [nil, nil] if text.blank?
+    return [ nil, nil ] if text.blank?
     match = text.match(/(.+?)\s*(?:-+|–|—|\||｜|\/|:)\s*(.+)/)
-    return [match[1].strip, match[2].strip] if match && match[1].present? && match[2].present?
-    [nil, nil]
+    return [ match[1].strip, match[2].strip ] if match && match[1].present? && match[2].present?
+    [ nil, nil ]
   end
 
   def includes_insensitive?(text, fragment)
